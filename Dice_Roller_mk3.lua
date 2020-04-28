@@ -181,6 +181,12 @@ for k, v in pairs(self.getObjects()) do
     faces = 3
   end
   r = math.random(faces)
+  seedcounter = seedcounter + math.random(10)
+  if seedcounter > 99 then
+    math.randomseed(tonumber(tostring(os.time()):reverse():sub(1, 7)) + tonumber(tostring(os.clock()):reverse():sub(1, 7)))
+    seedcounter = 0
+  end
+
   diceGuids[v.guid] = r
 end
 
