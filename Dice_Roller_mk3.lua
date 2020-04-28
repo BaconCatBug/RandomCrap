@@ -1,8 +1,40 @@
 --Based off: https://steamcommunity.com/sharedfiles/filedetails/?id=726800282
 --Link for this mod: https://steamcommunity.com/sharedfiles/filedetails/?id=959360907
+lastRolls = {}
+scaleBtn = 3
+printLastBtn = {
+  label = "Last roll", click_function = "printLast", function_owner = self,
+  position = { - 2.5, 0.1, - 0.87}, rotation = {0, 0, 0}, height = 50, width = 400,
+  font_size = 60, color = {0, 0, 0}, font_color = {1, 1, 1}, scale = {scaleBtn, scaleBtn, scaleBtn}
+}
+printLast5Btn = {
+  label = "Last 5 rolls", click_function = "printLast5", function_owner = self,
+  position = {2.5, 0.1, - 0.87}, rotation = {0, 0, 0}, height = 50, width = 400,
+  font_size = 60, color = {0, 0, 0}, font_color = {1, 1, 1}, scale = {scaleBtn, scaleBtn, scaleBtn}
+}
+
+function printLast()
+  printResults(1)
+end
+
+function printLast5()
+  printResults(5)
+end
+
+function printResults(n)
+  if #lastRolls == 0 then
+    printToAll("NO LAST ROLLS !!!\n", "Yellow")
+  else
+    printToAll("LAST ROLLS\n")
+  end
+  for i, result in ipairs(lastRolls) do
+    if i <= n then
+      printToAll(i.."  "..string.sub(result.msg, 3), result.color)
+    end
+  end
+end
 
 --Initialize Global Variables and pRNG Seed
-math.randomseed(tonumber(tostring(os.time()):reverse():sub(1, 7)) + tonumber(tostring(os.clock()):reverse():sub(1, 7)))
 seedcounter = 0
 ver = 'BCB-2020-04-20'
 lastHolder = {}
@@ -10,6 +42,22 @@ customFace = {4, 6, 8, 10, 12, 20}
 diceGuidFaces = {}
 sortedKeys = {}
 resultsTable = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+local function seedpRNG() -- constructor
+  local function private()
+    math.randomseed(tonumber(tostring(os.time()):gsub("%.", ""):reverse():sub(1, 7)) + tonumber(tostring(os.clock()):reverse():sub(1, 7)))
+    math.random()
+    math.random()
+    math.random()
+    math.random()
+  end
+  return {
+    func = function()
+      private()
+    end
+  }
+end
+local m = seedpRNG()
+m.func()
 
 --Determine the person who put the dice in the box.
 function onObjectPickedUp(playerColor, obj)
@@ -26,6 +74,8 @@ function onLoad(save_state)
   if self.getDescription() == '' then
     setDefaultState()
   end
+  self.createButton(printLastBtn)
+  self.createButton(printLast5Btn)
 end
 
 --Returns description on game save.
@@ -42,7 +92,7 @@ end
 
 --Sets default description.
 function setDefaultState()
-  self.setDescription(JSON.encode_pretty({Results = 'yes', SmoothDice = 'no', Rows = 'yes', SortNoRows = 'asc', Split_on_D12 = 'no', Step = 1, Version = ver}))
+  self.setDescription(JSON.encode_pretty({Results = 'no', SmoothDice = 'no', Rows = 'yes', SortNoRows = 'asc', Step = 1.05, Version = ver}))
 end
 
 --Creates a table and sorts the dice guids by value.
@@ -81,36 +131,32 @@ function onObjectEnterContainer(container, obj)
 end
 --Runs when an object is dropped in bag.
 function onCollisionEnter(collision_info)
-  if self.getLock() ~= true and collision_info.collision_object.tag == 'Dice' then
-  	collision_info.collision_object.destruct()
-    broadcastToAll("Your dice are now forfeit!", "Red")
-    broadcastToAll("Please lock the box before use!", "Red")
-    broadcastToAll("Stop! You've Violated The Law!", "Red")
-  else
-    playerColor = lastHolder[collision_info.collision_object]
-    if collision_info.collision_object.getGUID() == nil then return end
-    diceGuidFaces = {}
-    sortedKeys = {}
+  playerColor = lastHolder[collision_info.collision_object]
+  if collision_info.collision_object.getGUID() == nil then return end
+  diceGuidFaces = {}
+  sortedKeys = {}
 
-    --Save number of faces on dice
-    local index = {}
-    for k, v in ipairs(getAllObjects()) do
-      if v.tag == 'Dice' then
-        faces = #v.getRotationValues()
-        diceGuidFaces[v.getGUID()] = faces
-        table.insert(sortedKeys, v.getGUID())
+  --Save number of faces on dice
+  for k, v in ipairs(getAllObjects()) do
+    if v.tag == 'Dice' then
+      objType = tostring(v)
+      faces = tonumber(string.match(objType, 'Die_(%d+).*'))
+      if faces == nil then
+        faces = tonumber(customFace[v.getCustomObject().type + 1])
       end
+      diceGuidFaces[v.getGUID()] = faces
+      table.insert(sortedKeys, v.getGUID())
     end
+  end
 
-    --[[Benchmarking code
+  --[[Benchmarking code
 if resetclock ~= 1 then
 clockstart = os.clock()
 resetclock = 1
 end--]]
 
-  --Creates a timer to take the dice out and position them.
-  Wait.time(|| takeDiceOut(), 0.3)
-end
+--Creates a timer to take the dice out and position them.
+Wait.time(|| takeDiceOut(), 0.3)
 end
 
 --Function to take the dice out of the bag and position them.
@@ -135,11 +181,6 @@ for k, v in pairs(self.getObjects()) do
     faces = 3
   end
   r = math.random(faces)
-  seedcounter = seedcounter + 1
-  if seedcounter > 99 then
-    math.randomseed(tonumber(tostring(os.time()):reverse():sub(1, 7)) + tonumber(tostring(os.clock()):reverse():sub(1, 7)))
-    seedcounter = 0
-  end
   diceGuids[v.guid] = r
 end
 
@@ -163,8 +204,8 @@ for _, key in pairs(sortedKeys) do
     params.guid = key
     local d12Xoffset = 0
     local d12Zoffset = 0
-    if diceGuids[key] > 6 and data.Split_on_D12 == 'yes' then
-      d12Xoffset = 24
+    if diceGuids[key] > 6 then
+      d12Xoffset = -24
       d12Zoffset = 6
     end
     if data.Rows == 'no' then
@@ -174,7 +215,7 @@ for _, key in pairs(sortedKeys) do
     else
       params.position = {
         position.x + d12Xoffset + (Rows[diceGuids[key]] * math.cos((180 + self.getRotation().y) * 0.0174532)) * data.Step - (diceGuids[key] * math.sin((180 + self.getRotation().y) * 0.0174532)) * data.Step,
-        position.y + 5,
+        position.y + 2,
       position.z + (Rows[diceGuids[key]] * math.sin((self.getRotation().y) * 0.0174532)) * data.Step + ((diceGuids[key] - d12Zoffset) * math.cos((0 + self.getRotation().y) * 0.0174532)) * data.Step}
     end
 
@@ -208,21 +249,32 @@ end
 --Prints resultsTable.
 function printresultsTable()
 local data = JSON.decode(self.getDescription())
-if sum(resultsTable) > 0 and data.Results == 'yes' then
-  local description = {'Ones.', 'Twos.', 'Threes.', 'Fours.', 'Fives.', 'Sixes.', 'Sevens.', 'Eights.', 'Nines.', 'Tens.', 'Elevens.', 'Twelves.', 'Thirteens.', 'Fourteens.', 'Fifteens.', 'Sixteens.', 'Seventeens', 'Eighteens.', 'Nineteens.', 'Twenties.'}
-  local msg = ''
-  for dieFace, numRolled in ipairs(resultsTable) do
-    if numRolled > 0 then
-      msg = msg .. numRolled .. ' ' .. description[dieFace] .. ' '
-    end
+local description = {'Ones.', 'Twos.', 'Threes.', 'Fours.', 'Fives.', 'Sixes.', 'Sevens.', 'Eights.', 'Nines.', 'Tens.', 'Elevens.', 'Twelves.', 'Thirteens.', 'Fourteens.', 'Fifteens.', 'Sixteens.', 'Seventeens', 'Eighteens.', 'Nineteens.', 'Twenties.'}
+local msg = ''
+local color = {1, 1, 1}
+for dieFace, numRolled in ipairs(resultsTable) do
+  if numRolled > 0 then
+    msg = msg .. numRolled .. ' ' .. description[dieFace] .. ' '
   end
+end
 
-  local time = '[' .. os.date("%H") .. ':' .. os.date("%M") .. ':' .. os.date("%S") .. ' UTC] '
-  if playerColor == nil then
-    printToAll('*******************************************************\n' .. time .. '~UNKNOWN PLAYER~ rolls:\n' .. msg .. '*******************************************************', {1, 1, 1})
-  else
-    printToAll('*******************************************************\n' .. time .. Player[playerColor].steam_name .. ' rolls:\n' .. msg .. '*******************************************************', stringColorToRGB(playerColor))
+local time = '[' .. os.date("%H") .. ':' .. os.date("%M") .. ':' .. os.date("%S") .. ' UTC] '
+if playerColor == nil then
+  msg = '*******************************************************\n' .. time .. '~UNKNOWN PLAYER~ rolls:\n' .. msg .. '*******************************************************'
+else
+  msg = '*******************************************************\n' .. time .. Player[playerColor].steam_name .. ' rolls:\n' .. msg .. '*******************************************************'
+  color = stringColorToRGB(playerColor)
+end
+local rolltorecord = {msg = msg, color = color}
+if sum(resultsTable) > 0 then
+  if #lastRolls >= 5 then
+    table.remove(lastRolls, 1)
   end
+  table.insert(lastRolls, #lastRolls + 1, rolltorecord)
+end
+
+if sum(resultsTable) > 0 and data.Results == 'yes' then
+  printToAll(msg, color)
 end
 
 for k, v in ipairs(resultsTable) do
@@ -236,7 +288,8 @@ function insidef()
   obj.setValue(tab[1])
   if obj.tag == 'Dice' then
     objType = tostring(obj)
-    callFaces = #obj.getRotationValues()
+    callFaces = tonumber(string.match(objType, 'Die_(%d+).*'))
+    if callFaces == nil then callFaces = tonumber(customFace[obj.getCustomObject().type + 1]) end
     diceGuidFaces[obj.getGUID()] = callFaces
   end
 
